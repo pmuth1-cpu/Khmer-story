@@ -26,16 +26,26 @@ from src.longform_script_generator import (
     export_google_flow_prompts
 )
 from src.custom_topic_ai import sanitize_slug, create_ai_longform_script
-from src.meta_mms_engine import generate_meta_mms_speech, generate_meta_mms_english_speech
+try:
+    from src.meta_mms_engine import generate_meta_mms_speech, generate_meta_mms_english_speech
+except ImportError:
+    generate_meta_mms_speech = None
+    generate_meta_mms_english_speech = None
+
 from src.google_tts_engine import generate_google_khmer_speech
 from src.edge_tts_engine import generate_edge_tts_speech
 
 app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+IS_VERCEL = bool(os.environ.get("VERCEL"))
+OUTPUT_DIR = "/tmp/output" if IS_VERCEL else os.path.join(BASE_DIR, "output")
 CUSTOM_SCRIPTS_DIR = os.path.join(BASE_DIR, "custom_scripts")
-os.makedirs(CUSTOM_SCRIPTS_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+try:
+    os.makedirs(CUSTOM_SCRIPTS_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+except Exception:
+    pass
 
 # Global in-memory render progress tracker
 RENDER_STATUS = {}

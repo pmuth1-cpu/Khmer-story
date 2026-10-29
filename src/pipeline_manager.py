@@ -23,7 +23,12 @@ from src.longform_script_generator import (
 from src.caption_renderer import render_khmer_caption_png
 from src.video_builder import build_scene_clip_with_caption, assemble_final_video
 from src.image_helper import generate_cartoon_pill_placeholder
-from src.meta_mms_engine import generate_meta_mms_speech, generate_meta_mms_english_speech
+try:
+    from src.meta_mms_engine import generate_meta_mms_speech, generate_meta_mms_english_speech
+except ImportError:
+    generate_meta_mms_speech = None
+    generate_meta_mms_english_speech = None
+
 from src.google_tts_engine import generate_google_khmer_speech
 from src.edge_tts_engine import generate_edge_tts_speech
 

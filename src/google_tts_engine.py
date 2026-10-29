@@ -9,7 +9,11 @@ import urllib.request
 import urllib.parse
 import subprocess
 from typing import Optional
-import imageio_ffmpeg
+
+try:
+    import imageio_ffmpeg
+except ImportError:
+    imageio_ffmpeg = None
 
 
 def generate_google_khmer_speech(text: str, output_path: str) -> float:
@@ -40,7 +44,7 @@ def generate_google_khmer_speech(text: str, output_path: str) -> float:
 
 def probe_audio_duration(audio_path: str) -> float:
     try:
-        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe() if imageio_ffmpeg else "ffmpeg"
         cmd = [ffmpeg, "-i", audio_path]
         res = subprocess.run(cmd, capture_output=True, text=True)
         for line in res.stderr.splitlines():
@@ -49,4 +53,8 @@ def probe_audio_duration(audio_path: str) -> float:
                 return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
     except Exception:
         pass
-    return 6.5
+    try:
+        size = os.path.getsize(audio_path)
+        return max(3.0, round(size / 4000.0, 1))
+    except Exception:
+        return 6.5
