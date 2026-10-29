@@ -1,0 +1,34 @@
+# Environment and API keys (CRITICAL - NEVER COMMIT SECRETS)
+.env
+.env.local
+*.env
+
+# Large outputs and rendered media
+output/
+*.mp4
+*.avi
+*.mov
+*.mp3
+*.wav
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+
+# Temporary test artifacts
+test_*.html
+test_*.png
+test_*.ass
+test_*.py
+test_*.mp3
+test_*.wav
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
