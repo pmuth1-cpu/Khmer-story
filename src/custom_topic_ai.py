@@ -394,6 +394,30 @@ def generate_procedural_longform_script(
         clean_topic_en = clean_topic_en[0].lower() + clean_topic_en[1:]
     clean_topic_km = re.sub(r'^(ចុះបើ\s*|ហេតុអ្វី\s*)', '', title_km).strip().rstrip('?')
 
+    # Dynamic topic-specific Intro Hook (Avoids identical telescope across all topics)
+    t_lower = (title_en + " " + title_km).lower()
+    if any(k in t_lower for k in ["rain", "storm", "flood", "water", "ocean", "sea", "ភ្លៀង", "ទឹក"]):
+        intro_action = "holding a small colorful umbrella, gazing with wide curious eyes as atmospheric storm clouds form overhead"
+        intro_env = "vibrant stylized town square as the first dramatic rain droplets and stormy mist begin to fall"
+    elif any(k in t_lower for k in ["sun", "star", "space", "cosmic", "moon", "ព្រះអាទិត្យ", "ផ្កាយ"]):
+        intro_action = "standing on an open rooftop observatory, gazing upward with wonder as solar flares and planetary orbits shift"
+        intro_env = "panoramic twilight sky with glowing celestial bodies, star charts, and atmospheric auroras"
+    elif any(k in t_lower for k in ["oxygen", "air", "breath", "gas", "atmosphere", "អុកស៊ីសែន", "ខ្យល់"]):
+        intro_action = "holding an interactive holographic bubble meter, taking a deep curious breath as glowing oxygen molecules dance in the air"
+        intro_env = "modern open-air botanical laboratory with glowing atmospheric particle infographics"
+    elif any(k in t_lower for k in ["ice", "cold", "snow", "freeze", "glacier", "ត្រជាក់", "ទឹកកក"]):
+        intro_action = "wearing a cozy wool scarf and mittens, looking in awe as frost crystals rapidly expand across nearby surfaces"
+        intro_env = "chilly cartoon landscape transitioning into glistening ice crystals under a crisp pale blue sky"
+    elif any(k in t_lower for k in ["fire", "volcano", "lava", "heat", "hot", "ភ្លើង", "ភ្នំភ្លើង"]):
+        intro_action = "adjusting protective safety goggles, looking down at glowing thermal fissures radiating bright orange energy"
+        intro_env = "dramatic volcanic observatory with glowing heat-map monitors and rising thermal plumes"
+    elif any(k in t_lower for k in ["sleep", "dream", "brain", "body", "human", "គេង", "ខួរក្បាល"]):
+        intro_action = "sitting comfortably on a cozy modern chair, tapping forehead curiously while looking at a glowing animated brain hologram"
+        intro_env = "warm cozy bedroom studio with soft ambient lighting and glowing biometric sleep rhythm charts"
+    else:
+        intro_action = f"holding an interactive glowing holographic globe projecting {clean_topic_en}, eyes wide with scientific curiosity"
+        intro_env = "high-tech modern curiosity studio with floating infographic charts and glowing inquiry particles"
+
     step_prefixes_en = [
         "In the opening phase,", "Following that,", "As conditions develop,", "Looking closer at the science,",
         "Across different regions,", "At the biological level,", "Simultaneously,",
@@ -415,18 +439,23 @@ def generate_procedural_longform_script(
             base_speech_km = tmpl[0].replace("{topic}", clean_topic_km)
             base_speech_en = tmpl[1].replace("{topic_en}", clean_topic_en)
 
-            if cycle_round > 0:
+            if current_num == 1:
+                speech_en = base_speech_en
+                speech_km = base_speech_km
+                action = intro_action
+                env = intro_env
+            elif cycle_round > 0:
                 p_en = step_prefixes_en[i % len(step_prefixes_en)]
                 p_km = step_prefixes_km[i % len(step_prefixes_km)]
                 speech_en = f"{p_en} {base_speech_en[0].lower() + base_speech_en[1:]}"
                 speech_km = f"{p_km}{base_speech_km}"
                 action = f"{tmpl[2]} (stage {cycle_round + 1} analysis)"
+                env = tmpl[3]
             else:
                 speech_en = base_speech_en
                 speech_km = base_speech_km
                 action = tmpl[2]
-
-            env = tmpl[3]
+                env = tmpl[3]
             emotion = tmpl[4]
 
             full_prompt = (
