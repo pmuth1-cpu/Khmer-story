@@ -93,7 +93,9 @@ def export_google_flow_prompts(script_data: Dict, output_file: str):
 
     for sc in script_data.get("scenes", []):
         lines.append(f"### [Scene {sc['scene_num']:02d}] {sc.get('act', '')} (Duration: {sc.get('duration_hint', 7.5)}s)")
-        lines.append(f"Speech (Khmer): {sc['khmer_speech']}")
+        lines.append(f"Speech (Khmer): {sc.get('khmer_speech', '')}")
+        if sc.get('english_speech'):
+            lines.append(f"Speech (English): {sc.get('english_speech', '')}")
         lines.append("Google Flow Prompt:")
         lines.append(sc.get("full_prompt", ""))
         lines.append("\n" + "-" * 80 + "\n")

@@ -156,15 +156,25 @@ HTML_TEMPLATE = """
 
         <p id="topicDescription" class="text-[11px] text-slate-400 italic bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">...</p>
 
-        <!-- Google Flow Export & Batch Buttons -->
-        <div class="pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-2">
-          <a id="btnDownloadPrompts" href="#" target="_blank" class="px-3 py-2 text-center text-xs rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition flex items-center justify-center gap-1.5">
-            <span>📥 Export Prompts</span>
-          </a>
-          <label class="cursor-pointer px-3 py-2 text-center text-xs rounded-xl border border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-medium transition flex items-center justify-center gap-1.5">
-            <span>📁 Batch Images (01...)</span>
-            <input type="file" multiple accept="image/*" class="hidden" onchange="batchUploadImages(this.files)">
-          </label>
+        <!-- Google Flow Export, Script Import & Batch Buttons -->
+        <div class="pt-3 border-t border-slate-800/80 space-y-2">
+          <div class="grid grid-cols-2 gap-2">
+            <a id="btnDownloadPrompts" href="#" target="_blank" class="px-3 py-2 text-center text-xs rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition flex items-center justify-center gap-1.5">
+              <span>📥 Export Prompts</span>
+            </a>
+            <label class="cursor-pointer px-3 py-2 text-center text-xs rounded-xl border border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-medium transition flex items-center justify-center gap-1.5">
+              <span>📁 Batch Images (01...)</span>
+              <input type="file" multiple accept="image/*" class="hidden" onchange="batchUploadImages(this.files)">
+            </label>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="openImportScriptModal()" class="px-3 py-2 text-center text-xs rounded-xl border border-sky-500/50 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 font-medium transition flex items-center justify-center gap-1.5">
+              <span>📝 Import Script</span>
+            </button>
+            <a id="btnDownloadScript" href="#" target="_blank" class="px-3 py-2 text-center text-xs rounded-xl border border-purple-500/50 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 font-medium transition flex items-center justify-center gap-1.5">
+              <span>📜 Export Script TXT</span>
+            </a>
+          </div>
         </div>
       </div>
 
@@ -414,6 +424,57 @@ HTML_TEMPLATE = """
 
   </main>
 
+  <!-- Import Script Modal -->
+  <div id="importScriptModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="text-sm font-bold text-amber-400 flex items-center gap-2">
+            <span>📝</span> <span>Import External Narrative Script</span>
+          </h3>
+          <p class="text-[11px] text-slate-400">Paste your narrative script from ChatGPT, Claude, or an external file.</p>
+        </div>
+        <button onclick="closeImportScriptModal()" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-[11px] text-slate-300 font-medium block">
+          Paste Script Text (Supports JSON array, "Scene 1: ...", or line-by-line text):
+        </label>
+        <textarea id="importScriptTextarea" rows="12" placeholder='Example Format 1 (JSON):
+[
+  { "scene_num": 1, "khmer_speech": "អត្ថបទប្លង់ទី ១...", "english_speech": "Scene 1..." },
+  { "scene_num": 2, "khmer_speech": "អត្ថបទប្លង់ទី ២...", "english_speech": "Scene 2..." }
+]
+
+Example Format 2 (Text Blocks):
+Scene 1:
+Khmer: អត្ថបទប្លង់ទី ១...
+English: Scene 1 narration...
+
+Scene 2:
+Khmer: អត្ថបទប្លង់ទី ២...
+English: Scene 2 narration...
+
+Example Format 3 (Line-by-Line):
+1. អត្ថបទប្លង់ទី ១
+2. អត្ថបទប្លង់ទី ២' class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <span class="text-[10px] text-slate-400">💡 Automatically maps to scenes 1, 2, 3... and updates your script!</span>
+        <div class="flex gap-2">
+          <button onclick="closeImportScriptModal()" class="px-4 py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300">
+            Cancel
+          </button>
+          <button onclick="submitImportScript()" id="btnSubmitImport" class="px-4 py-2 text-xs rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:bg-amber-400 text-slate-950 font-bold shadow">
+            🚀 Import & Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Notification Toast -->
   <div id="toast" class="fixed bottom-6 right-6 bg-amber-400 text-slate-950 font-semibold px-4 py-3 rounded-xl shadow-2xl transition transform translate-y-20 opacity-0 pointer-events-none text-xs flex items-center gap-2 z-50">
     <span>✅</span> <span id="toastMsg">សារជូនដំណឹង</span>
@@ -481,6 +542,8 @@ HTML_TEMPLATE = """
 
       document.getElementById('scenesCountHeader').innerText = 'ចំនួនប្លង់សរុប: ' + currentScript.scenes.length + ' ប្លង់ • រយៈពេលប៉ាន់ស្មាន: ' + (currentScript.estimated_duration_minutes || 8) + ' នាទី';
       document.getElementById('btnDownloadPrompts').href = '/api/project/' + activeTopicId + '/prompts_file';
+      const btnSc = document.getElementById('btnDownloadScript');
+      if (btnSc) btnSc.href = '/api/project/' + activeTopicId + '/script_text';
 
       updateVideoPlayer();
       updateThumbnail();
@@ -523,6 +586,16 @@ HTML_TEMPLATE = """
       });
     }
 
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
     function renderScenes(scenes) {
       const container = document.getElementById('scenesContainer');
       container.innerHTML = '';
@@ -544,8 +617,11 @@ HTML_TEMPLATE = """
               <span class="text-[11px] text-slate-500 font-mono">${sc.act || ''}</span>
             </div>
             <div class="flex items-center gap-2">
-              <label class="cursor-pointer text-[11px] text-emerald-400 hover:text-emerald-300 transition font-medium px-2 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-                📁 Upload Image
+              <button onclick="toggleEditScene(${sc.scene_num})" class="text-[11px] text-amber-400 hover:text-amber-300 transition font-medium px-2 py-1 bg-amber-500/10 rounded-lg border border-amber-500/20 flex items-center gap-1">
+                <span>✏️</span> <span>Edit Script</span>
+              </button>
+              <label class="cursor-pointer text-[11px] text-emerald-400 hover:text-emerald-300 transition font-medium px-2 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20 flex items-center gap-1">
+                <span>📁</span> <span>Upload Image</span>
                 <input type="file" accept="image/*" class="hidden" onchange="uploadSingleImage(${sc.scene_num}, this.files[0])">
               </label>
               <button onclick="copyPrompt('${encodeURIComponent(sc.full_prompt)}')" class="text-[11px] text-slate-400 hover:text-amber-300 transition px-2 py-1 bg-slate-900 rounded-lg border border-slate-800">
@@ -565,23 +641,130 @@ HTML_TEMPLATE = """
                   <audio controls class="h-6 w-36 rounded" src="${audioUrl}"></audio>
                 </div>
               </div>
-              <div class="space-y-1.5">
+              <div id="view_box_${sc.scene_num}" class="space-y-1.5">
                 <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80">
                   <span class="text-[10px] text-amber-400 font-semibold block mb-0.5">🇰🇭 អត្ថបទខ្មែរ:</span>
-                  <p class="khmer-font text-xs text-slate-200 leading-relaxed">${sc.khmer_speech || ''}</p>
+                  <p class="khmer-font text-xs text-slate-200 leading-relaxed">${escapeHtml(sc.khmer_speech || '')}</p>
                 </div>
                 ${sc.english_speech ? `
                 <div class="p-2.5 rounded-lg bg-sky-950/20 border border-sky-800/40">
                   <span class="text-[10px] text-sky-400 font-semibold block mb-0.5">🇺🇸 English Narration:</span>
-                  <p class="text-xs text-sky-200 leading-relaxed font-sans">${sc.english_speech}</p>
+                  <p class="text-xs text-sky-200 leading-relaxed font-sans">${escapeHtml(sc.english_speech)}</p>
                 </div>` : ''}
               </div>
+
+              <!-- Inline Script Editor -->
+              <div id="edit_box_${sc.scene_num}" class="hidden space-y-2 pt-2 border-t border-slate-800 bg-slate-900/90 p-3 rounded-xl border border-amber-400/30 shadow-lg">
+                <div class="flex items-center justify-between pb-1">
+                  <span class="text-[11px] font-bold text-amber-400">✏️ កែប្រែអត្ថបទប្លង់ទី ${sc.scene_num} (Edit Scene Narration)</span>
+                  <span class="text-[10px] text-slate-400">ស្វ័យប្រវត្តិកែសម្រួលសំឡេង & Prompt</span>
+                </div>
+                <div>
+                  <label class="text-[10px] text-amber-300 font-medium block mb-1">🇰🇭 អត្ថបទខ្មែរ (Khmer Speech):</label>
+                  <textarea id="edit_km_${sc.scene_num}" rows="3" class="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-lg p-2 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none">${escapeHtml(sc.khmer_speech || '')}</textarea>
+                </div>
+                <div>
+                  <label class="text-[10px] text-sky-300 font-medium block mb-1">🇺🇸 English Narration (Optional):</label>
+                  <textarea id="edit_en_${sc.scene_num}" rows="2" class="w-full bg-slate-950 border border-slate-700 focus:border-sky-400 rounded-lg p-2 text-xs text-sky-100 font-sans leading-relaxed focus:outline-none">${escapeHtml(sc.english_speech || '')}</textarea>
+                </div>
+                <div class="flex justify-end gap-2 pt-1">
+                  <button onclick="toggleEditScene(${sc.scene_num})" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition">
+                    បោះបង់ (Cancel)
+                  </button>
+                  <button onclick="saveSceneScript(${sc.scene_num})" class="px-3.5 py-1.5 text-xs rounded-lg bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-bold transition flex items-center gap-1 shadow">
+                    <span>💾 រក្សាទុក (Save & Refresh)</span>
+                  </button>
+                </div>
+              </div>
+
               <div class="text-[10px] text-slate-500 font-mono truncate">Prompt: ${sc.full_prompt}</div>
             </div>
           </div>
         `;
         container.appendChild(card);
       });
+    }
+
+    function toggleEditScene(sceneNum) {
+      const box = document.getElementById('edit_box_' + sceneNum);
+      if (!box) return;
+      box.classList.toggle('hidden');
+    }
+
+    async function saveSceneScript(sceneNum) {
+      const kmElem = document.getElementById('edit_km_' + sceneNum);
+      const enElem = document.getElementById('edit_en_' + sceneNum);
+      const km = kmElem ? kmElem.value : '';
+      const en = enElem ? enElem.value : '';
+
+      showToast(`កំពុងរក្សាទុកអត្ថបទប្លង់ ${sceneNum}...`);
+      try {
+        const res = await fetch(`/api/project/${activeTopicId}/update_scene_script`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scene_num: sceneNum, khmer_speech: km, english_speech: en })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          showToast(`បានកែសម្រួលអត្ថបទប្លង់ ${sceneNum} ជោគជ័យ!`);
+          if (currentScript && currentScript.scenes) {
+            const sc = currentScript.scenes.find(s => s.scene_num === sceneNum);
+            if (sc) {
+              sc.khmer_speech = km;
+              sc.english_speech = en;
+            }
+            renderScenes(currentScript.scenes);
+          } else {
+            loadActiveTopic();
+          }
+        } else {
+          alert('Error: ' + (data.error || 'Failed to update'));
+        }
+      } catch (err) {
+        alert('Network error: ' + err);
+      }
+    }
+
+    function openImportScriptModal() {
+      document.getElementById('importScriptModal').classList.remove('hidden');
+    }
+
+    function closeImportScriptModal() {
+      document.getElementById('importScriptModal').classList.add('hidden');
+    }
+
+    async function submitImportScript() {
+      const text = document.getElementById('importScriptTextarea').value.trim();
+      if (!text) {
+        alert('សូមបិទភ្ជាប់ (Paste) អត្ថបទ Script ជាមុនសិន!');
+        return;
+      }
+      const btn = document.getElementById('btnSubmitImport');
+      btn.disabled = true;
+      btn.innerText = 'កំពុង Import...';
+      showToast('កំពុងដំណើរការ Import Script...');
+
+      try {
+        const res = await fetch(`/api/project/${activeTopicId}/import_script`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script_text: text })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          showToast(`🎉 បាន Import និងកែប្រែ ${data.updated_count} ប្លង់ជោគជ័យ!`);
+          closeImportScriptModal();
+          document.getElementById('importScriptTextarea').value = '';
+          loadActiveTopic();
+        } else {
+          alert('Import error: ' + (data.error || 'Failed'));
+        }
+      } catch (err) {
+        alert('Network error: ' + err);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '🚀 Import & Apply';
+      }
     }
 
     async function generateCustomTopic() {
@@ -899,10 +1082,316 @@ def get_project_script(topic_id):
 def download_prompts_file(topic_id):
     out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
     prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
-    script = get_or_create_project_script(topic_id)
+    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+    if os.path.exists(custom_path):
+        with open(custom_path, "r", encoding="utf-8") as f:
+            script = json.load(f)
+    else:
+        script = get_or_create_project_script(topic_id)
+
     os.makedirs(out_dir, exist_ok=True)
     export_google_flow_prompts(script, prompts_file)
-    return send_from_directory(out_dir, "google_flow_prompts.txt", as_attachment=True)
+    resp = send_from_directory(out_dir, "google_flow_prompts.txt", as_attachment=True)
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
+@app.route("/api/project/<topic_id>/script_text")
+def download_script_text(topic_id):
+    """Exports clean human-readable narrative text file for external use/reading."""
+    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+    if os.path.exists(custom_path):
+        with open(custom_path, "r", encoding="utf-8") as f:
+            script = json.load(f)
+    else:
+        script = get_or_create_project_script(topic_id)
+
+    lines = []
+    lines.append("=" * 70)
+    lines.append(f"PROJECT NARRATIVE SCRIPT: {script.get('title_km', '')} | {script.get('title_en', '')}")
+    lines.append(f"Total Scenes: {len(script.get('scenes', []))} scenes • Target Duration: {script.get('estimated_duration_minutes', 8)} min")
+    lines.append("=" * 70)
+    lines.append("")
+
+    for sc in script.get("scenes", []):
+        s_num = sc.get("scene_num", 1)
+        act = sc.get("act", "")
+        lines.append(f"--- SCENE {s_num:02d} ({act}) ---")
+        lines.append(f"Khmer: {sc.get('khmer_speech', '')}")
+        if sc.get("english_speech"):
+            lines.append(f"English: {sc.get('english_speech', '')}")
+        lines.append("")
+
+    content = "\n".join(lines)
+    resp = Response(content, mimetype="text/plain; charset=utf-8")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{topic_id}_narrative_script.txt"'
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
+def parse_external_script_text(raw_text: str, total_scenes: int = 100) -> List[Dict]:
+    """
+    Intelligently parses external narrative script text in various formats:
+    1. JSON array: [{"scene_num": 1, "khmer_speech": "...", "english_speech": "..."}]
+    2. JSON object: {"scenes": [...]}
+    3. Markdown / Text Scene Blocks:
+        Scene 1:
+        Khmer: ...
+        English: ...
+    4. Numbered lines:
+        1. Khmer text...
+        2. Khmer text...
+    5. Simple paragraphs separated by blank lines.
+    Returns list of dicts with keys: scene_num, khmer_speech, english_speech
+    """
+    raw_text = raw_text.strip()
+    if not raw_text:
+        return []
+
+    # 1. Try JSON
+    if (raw_text.startswith("[") and raw_text.endswith("]")) or (raw_text.startswith("{") and raw_text.endswith("}")):
+        try:
+            parsed = json.loads(raw_text)
+            if isinstance(parsed, dict) and "scenes" in parsed:
+                parsed = parsed["scenes"]
+            if isinstance(parsed, list):
+                results = []
+                for idx, item in enumerate(parsed):
+                    if isinstance(item, dict):
+                        s_num = item.get("scene_num") or (idx + 1)
+                        km = item.get("khmer_speech") or item.get("speech") or item.get("khmer") or item.get("text") or ""
+                        en = item.get("english_speech") or item.get("english") or item.get("en") or ""
+                        results.append({
+                            "scene_num": int(s_num),
+                            "khmer_speech": str(km).strip(),
+                            "english_speech": str(en).strip()
+                        })
+                    elif isinstance(item, str):
+                        results.append({
+                            "scene_num": idx + 1,
+                            "khmer_speech": item.strip(),
+                            "english_speech": ""
+                        })
+                if results:
+                    return results
+        except Exception:
+            pass
+
+    # 2. Check for Scene blocks (e.g., "Scene 1:", "ប្លង់ ១:", "Scene 01", etc.)
+    scene_block_pattern = re.compile(r'(?:^|\n)(?:Scene|ប្លង់|Slide|Frame|Section)\s*0*(\d{1,3})[:.\-\s]*', re.IGNORECASE)
+    splits = list(scene_block_pattern.finditer(raw_text))
+
+    if len(splits) >= 2:
+        results = []
+        for i, match in enumerate(splits):
+            s_num = int(match.group(1))
+            start_pos = match.end()
+            end_pos = splits[i + 1].start() if i + 1 < len(splits) else len(raw_text)
+            block_content = raw_text[start_pos:end_pos].strip()
+
+            # Look for Khmer: and English: lines inside block
+            km_match = re.search(r'(?:(?:Khmer|🇰🇭|km|ខ្មែរ)\s*[:：]\s*)(.+?)(?=(?:(?:English|🇺🇸|en)\s*[:：])|$)', block_content, re.DOTALL | re.IGNORECASE)
+            en_match = re.search(r'(?:(?:English|🇺🇸|en)\s*[:：]\s*)(.+?)(?=(?:(?:Khmer|🇰🇭|km|ខ្មែរ)\s*[:：])|$)', block_content, re.DOTALL | re.IGNORECASE)
+
+            if km_match or en_match:
+                km = km_match.group(1).strip() if km_match else ""
+                en = en_match.group(1).strip() if en_match else ""
+            else:
+                # If no labels, check lines: Khmer vs English by unicode
+                sub_lines = [l.strip() for l in block_content.splitlines() if l.strip()]
+                km_parts = []
+                en_parts = []
+                for sl in sub_lines:
+                    if re.search(r'[\u1780-\u17ff]', sl):
+                        km_parts.append(sl)
+                    else:
+                        en_parts.append(sl)
+                km = " ".join(km_parts)
+                en = " ".join(en_parts)
+                if not km and not en:
+                    km = block_content
+
+            results.append({
+                "scene_num": s_num,
+                "khmer_speech": km,
+                "english_speech": en
+            })
+        if results:
+            return results
+
+    # 3. Check for numbered lines: 1. text, 2. text
+    lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+    num_pattern = re.compile(r'^0*(\d{1,3})[\.\:\-\)]\s*(.*)$')
+    numbered_results = []
+    for l in lines:
+        m = num_pattern.match(l)
+        if m:
+            s_num = int(m.group(1))
+            text_body = m.group(2).strip()
+            if " | " in text_body:
+                parts = text_body.split(" | ", 1)
+                numbered_results.append({
+                    "scene_num": s_num,
+                    "khmer_speech": parts[0].strip(),
+                    "english_speech": parts[1].strip()
+                })
+            elif re.search(r'[\u1780-\u17ff]', text_body):
+                numbered_results.append({
+                    "scene_num": s_num,
+                    "khmer_speech": text_body,
+                    "english_speech": ""
+                })
+            else:
+                numbered_results.append({
+                    "scene_num": s_num,
+                    "khmer_speech": "",
+                    "english_speech": text_body
+                })
+
+    if len(numbered_results) >= 2:
+        return numbered_results
+
+    # 4. Fallback: split by double line breaks (paragraphs)
+    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', raw_text) if p.strip()]
+    fallback_results = []
+    for idx, p in enumerate(paragraphs, start=1):
+        if re.search(r'[\u1780-\u17ff]', p):
+            fallback_results.append({
+                "scene_num": idx,
+                "khmer_speech": p,
+                "english_speech": ""
+            })
+        else:
+            fallback_results.append({
+                "scene_num": idx,
+                "khmer_speech": "",
+                "english_speech": p
+            })
+    return fallback_results
+
+
+@app.route("/api/project/<topic_id>/update_scene_script", methods=["POST"])
+def update_scene_script(topic_id):
+    """Updates a single scene's Khmer and/or English narration."""
+    data = request.json or {}
+    scene_num = int(data.get("scene_num", 1))
+    khmer_speech = data.get("khmer_speech", "").strip()
+    english_speech = data.get("english_speech", "").strip()
+
+    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+    if os.path.exists(custom_path):
+        with open(custom_path, "r", encoding="utf-8") as f:
+            script_data = json.load(f)
+    else:
+        script_data = get_or_create_project_script(topic_id)
+
+    matched = False
+    for s in script_data.get("scenes", []):
+        if s.get("scene_num") == scene_num:
+            if khmer_speech:
+                s["khmer_speech"] = khmer_speech
+            if english_speech:
+                s["english_speech"] = english_speech
+            matched = True
+            break
+
+    if not matched:
+        return jsonify({"status": "error", "error": f"Scene {scene_num} not found"}), 404
+
+    # Save to custom script file
+    with open(custom_path, "w", encoding="utf-8") as f:
+        json.dump(script_data, f, ensure_ascii=False, indent=2)
+
+    # Invalidate audio and clip cache for this scene
+    out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
+    audio_dir = os.path.join(out_dir, "audio")
+    clips_dir = os.path.join(out_dir, "clips")
+    for fname in [f"scene_{scene_num:02d}.mp3", f"scene_{scene_num:02d}.meta.json"]:
+        p = os.path.join(audio_dir, fname)
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    p_clip = os.path.join(clips_dir, f"clip_{scene_num:02d}.mp4")
+    if os.path.exists(p_clip):
+        try:
+            os.remove(p_clip)
+        except Exception:
+            pass
+
+    # Re-export prompts file
+    prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
+    export_google_flow_prompts(script_data, prompts_file)
+
+    return jsonify({"status": "ok", "scene_num": scene_num})
+
+
+@app.route("/api/project/<topic_id>/import_script", methods=["POST"])
+def import_project_script(topic_id):
+    """Batch imports narrative script from external text (JSON, blocks, or lines)."""
+    data = request.json or {}
+    raw_text = data.get("script_text", "")
+    if not raw_text:
+        return jsonify({"status": "error", "error": "No script text provided"}), 400
+
+    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+    if os.path.exists(custom_path):
+        with open(custom_path, "r", encoding="utf-8") as f:
+            script_data = json.load(f)
+    else:
+        script_data = get_or_create_project_script(topic_id)
+
+    total_scenes = len(script_data.get("scenes", []))
+    items = parse_external_script_text(raw_text, total_scenes=total_scenes)
+    if not items:
+        return jsonify({"status": "error", "error": "Could not parse any scenes from text"}), 400
+
+    out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
+    audio_dir = os.path.join(out_dir, "audio")
+    clips_dir = os.path.join(out_dir, "clips")
+
+    scenes_by_num = {s.get("scene_num"): s for s in script_data.get("scenes", [])}
+    updated_scenes = []
+
+    for item in items:
+        s_num = item["scene_num"]
+        target = scenes_by_num.get(s_num)
+        if target:
+            if item.get("khmer_speech"):
+                target["khmer_speech"] = item["khmer_speech"]
+            if item.get("english_speech"):
+                target["english_speech"] = item["english_speech"]
+            updated_scenes.append(s_num)
+
+            # Invalidate cached audio & clip
+            for fname in [f"scene_{s_num:02d}.mp3", f"scene_{s_num:02d}.meta.json"]:
+                p = os.path.join(audio_dir, fname)
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+            p_clip = os.path.join(clips_dir, f"clip_{s_num:02d}.mp4")
+            if os.path.exists(p_clip):
+                try:
+                    os.remove(p_clip)
+                except Exception:
+                    pass
+
+    # Save custom script
+    with open(custom_path, "w", encoding="utf-8") as f:
+        json.dump(script_data, f, ensure_ascii=False, indent=2)
+
+    # Re-export google flow prompts
+    prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
+    export_google_flow_prompts(script_data, prompts_file)
+
+    return jsonify({"status": "ok", "updated_count": len(updated_scenes), "scenes": updated_scenes})
 
 
 @app.route("/api/create_topic", methods=["POST"])
@@ -1119,6 +1608,7 @@ def get_scene_audio(topic_id, scene_num):
     """
     Returns audio for a single scene with selectable voice engine.
     Defaults to Christopher (Kurzgesagt deep documentary voice).
+    Automatically invalidates cache if speech text has been edited!
     """
     engine = request.args.get("engine", "edge_tts_chris")
     out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
@@ -1127,55 +1617,63 @@ def get_scene_audio(topic_id, scene_num):
     aud_path = os.path.join(audio_dir, f"scene_{scene_num:02d}.mp3")
     meta_path = os.path.join(audio_dir, f"scene_{scene_num:02d}.meta.json")
 
+    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+    if os.path.exists(custom_path):
+        with open(custom_path, "r", encoding="utf-8") as f:
+            script_data = json.load(f)
+    else:
+        script_data = get_or_create_project_script(topic_id)
+
+    target_scene = None
+    for s in script_data.get("scenes", []):
+        if s.get("scene_num") == scene_num:
+            target_scene = s
+            break
+
+    if target_scene:
+        if engine == "edge_tts_guy":
+            sp_text = target_scene.get("english_speech") or target_scene.get("action", "Curiosity science scene")
+        elif engine.startswith("edge_tts"):
+            sp_text = target_scene.get("english_speech") or target_scene.get("action", "Curiosity science scene")
+        elif engine == "meta_mms_eng":
+            sp_text = target_scene.get("english_speech") or target_scene.get("action", "Curiosity science scene")
+        elif engine == "google_tts":
+            sp_text = target_scene.get("khmer_speech", "")
+        else:
+            sp_text = target_scene.get("khmer_speech", "")
+    else:
+        sp_text = ""
+
     need_gen = True
     if os.path.exists(aud_path) and os.path.exists(meta_path) and os.path.getsize(aud_path) > 1000:
         try:
             with open(meta_path, "r", encoding="utf-8") as mf:
                 meta = json.load(mf)
-            if meta.get("engine") == engine:
+            if meta.get("engine") == engine and meta.get("speech_text", "").strip() == sp_text.strip():
                 need_gen = False
         except Exception:
             need_gen = True
 
-    if need_gen:
-        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-        if os.path.exists(custom_path):
-            with open(custom_path, "r", encoding="utf-8") as f:
-                script_data = json.load(f)
+    if need_gen and target_scene and sp_text:
+        if engine == "edge_tts_guy":
+            generate_edge_tts_speech(sp_text, aud_path, voice="guy")
+        elif engine.startswith("edge_tts"):
+            generate_edge_tts_speech(sp_text, aud_path, voice="christopher")
+        elif engine == "meta_mms_eng":
+            generate_meta_mms_english_speech(sp_text, aud_path)
+        elif engine == "google_tts":
+            generate_google_khmer_speech(sp_text, aud_path)
         else:
-            script_data = get_or_create_project_script(topic_id)
-
-        target_scene = None
-        for s in script_data.get("scenes", []):
-            if s.get("scene_num") == scene_num:
-                target_scene = s
-                break
-
-        if target_scene:
-            if engine == "edge_tts_guy":
-                sp_text = target_scene.get("english_speech") or target_scene.get("action", "Curiosity science scene")
-                generate_edge_tts_speech(sp_text, aud_path, voice="guy")
-            elif engine.startswith("edge_tts"):
-                sp_text = target_scene.get("english_speech") or target_scene.get("action", "Curiosity science scene")
-                generate_edge_tts_speech(sp_text, aud_path, voice="christopher")
-            elif engine == "meta_mms_eng":
-                sp_text = target_scene.get("english_speech") or target_scene.get("action", "Curiosity science scene")
-                generate_meta_mms_english_speech(sp_text, aud_path)
-            elif engine == "google_tts":
-                sp_text = target_scene.get("khmer_speech", "")
-                generate_google_khmer_speech(sp_text, aud_path)
-            else:
-                sp_text = target_scene.get("khmer_speech", "")
-                generate_meta_mms_speech(sp_text, aud_path)
-            try:
-                with open(meta_path, "w", encoding="utf-8") as mf:
-                    json.dump({"speech_text": sp_text, "engine": engine}, mf, ensure_ascii=False)
-            except Exception:
-                pass
+            generate_meta_mms_speech(sp_text, aud_path)
+        try:
+            with open(meta_path, "w", encoding="utf-8") as mf:
+                json.dump({"speech_text": sp_text, "engine": engine}, mf, ensure_ascii=False)
+        except Exception:
+            pass
 
     if os.path.exists(aud_path):
         resp = send_from_directory(audio_dir, f"scene_{scene_num:02d}.mp3")
-        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return resp
     return "Audio not found", 404
 
