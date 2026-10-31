@@ -1043,11 +1043,13 @@ Supports:
       }
 
       showToast(`🎉 បានបញ្ចូលរូបភាពទាំងអស់ ${successCount}/${assigned.length} សន្លឹកជោគជ័យ!`);
-      if (currentScript && currentScript.scenes) {
-        renderScenes(currentScript.scenes);
-      } else {
-        loadActiveTopic();
-      }
+      // Keep DOM stable: update thumbnails without blanking innerHTML
+      assigned.forEach(item => {
+        const img = document.getElementById(`scene_img_${item.scene}`);
+        if (img) {
+          img.src = `/api/project/${activeTopicId}/image/${item.scene}?t=${Date.now()}`;
+        }
+      });
     }
 
     async function uploadSingleImage(sceneNum, file) {
