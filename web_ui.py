@@ -36,6 +36,7 @@ from src.google_tts_engine import generate_google_khmer_speech
 from src.edge_tts_engine import generate_edge_tts_speech
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1 GB upload support for batch images
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IS_VERCEL = bool(os.environ.get("VERCEL"))
 OUTPUT_DIR = "/tmp/output" if IS_VERCEL else os.path.join(BASE_DIR, "output")
@@ -633,7 +634,7 @@ Supports:
                 <span class="text-[11px] text-slate-400 font-medium">អត្ថបទសំឡេង (Narration Script):</span>
                 <div class="flex items-center gap-1.5">
                   <span class="text-[10px] text-amber-300">🎙️ ស្តាប់សំឡេង:</span>
-                  <audio controls class="h-6 w-36 rounded" src="${audioUrl}"></audio>
+                  <audio controls preload="none" class="h-6 w-36 rounded" src="${audioUrl}"></audio>
                 </div>
               </div>
               <div id="view_box_${sc.scene_num}" class="space-y-1.5">
@@ -856,27 +857,42 @@ Supports:
 
     async function batchUploadImages(files) {
       if (!files || files.length === 0) return;
-      const formData = new FormData();
-      for (let i = 0; i < files.length; i++) {
-        formData.append('images', files[i]);
-      }
-      formData.append('topic_id', activeTopicId);
+      const totalFiles = files.length;
+      showToast(`កំពុងចាប់ផ្តើមបញ្ចូលរូបភាព ${totalFiles} សន្លឹក...`);
 
-      showToast(`កំពុង Upload រូបភាព ${files.length} សន្លឹកទៅកាន់ Scene Breakdown...`);
-      try {
-        const res = await fetch('/api/batch_upload_images', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (data.status === 'ok') {
-          showToast(`បានបញ្ចូល ${data.saved_count} រូបភាពជោគជ័យទៅក្នុងតារាងប្លង់!`);
-          // Force complete refresh of thumbnails
-          if (currentScript && currentScript.scenes) {
-            renderScenes(currentScript.scenes);
+      // Upload in chunks of 10 images to prevent huge payload timeouts / memory spikes
+      const CHUNK_SIZE = 10;
+      let totalSaved = 0;
+
+      for (let i = 0; i < totalFiles; i += CHUNK_SIZE) {
+        const chunk = Array.from(files).slice(i, i + CHUNK_SIZE);
+        const chunkEnd = Math.min(i + CHUNK_SIZE, totalFiles);
+        showToast(`កំពុង Upload រូបភាព ${i + 1}-${chunkEnd} នៃ ${totalFiles}...`);
+
+        const formData = new FormData();
+        chunk.forEach(f => formData.append('images', f));
+        formData.append('topic_id', activeTopicId);
+
+        try {
+          const res = await fetch('/api/batch_upload_images', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json().catch(() => null);
+            if (data && data.status === 'ok') {
+              totalSaved += (data.saved_count || chunk.length);
+            }
           } else {
-            loadActiveTopic();
+            console.warn(`Chunk ${i} upload HTTP ${res.status}`);
           }
+        } catch (chunkErr) {
+          console.error(`Chunk error:`, chunkErr);
         }
-      } catch (err) {
-        alert('Batch upload error: ' + err);
+      }
+
+      showToast(`🎉 បានបញ្ចូលរូបភាពទាំងអស់ ${totalSaved} សន្លឹកជោគជ័យ!`);
+      if (currentScript && currentScript.scenes) {
+        renderScenes(currentScript.scenes);
+      } else {
+        loadActiveTopic();
       }
     }
 
@@ -1779,21 +1795,26 @@ def get_scene_audio(topic_id, scene_num):
             need_gen = True
 
     if need_gen and target_scene and sp_text:
-        if engine == "edge_tts_guy":
-            generate_edge_tts_speech(sp_text, aud_path, voice="guy")
-        elif engine.startswith("edge_tts"):
-            generate_edge_tts_speech(sp_text, aud_path, voice="christopher")
-        elif engine == "meta_mms_eng":
-            generate_meta_mms_english_speech(sp_text, aud_path)
-        elif engine == "google_tts":
-            generate_google_khmer_speech(sp_text, aud_path)
-        else:
-            generate_meta_mms_speech(sp_text, aud_path)
         try:
-            with open(meta_path, "w", encoding="utf-8") as mf:
-                json.dump({"speech_text": sp_text, "engine": engine}, mf, ensure_ascii=False)
-        except Exception:
-            pass
+            if engine == "edge_tts_guy":
+                generate_edge_tts_speech(sp_text, aud_path, voice="guy")
+            elif engine.startswith("edge_tts"):
+                generate_edge_tts_speech(sp_text, aud_path, voice="christopher")
+            elif engine == "meta_mms_eng":
+                generate_meta_mms_english_speech(sp_text, aud_path)
+            elif engine == "google_tts":
+                generate_google_khmer_speech(sp_text, aud_path)
+            else:
+                generate_meta_mms_speech(sp_text, aud_path)
+
+            try:
+                with open(meta_path, "w", encoding="utf-8") as mf:
+                    json.dump({"speech_text": sp_text, "engine": engine}, mf, ensure_ascii=False)
+            except Exception:
+                pass
+        except Exception as e_tts:
+            print(f"Notice: TTS generation failed for scene {scene_num} ({engine}): {e_tts}")
+            return Response("TTS generation failed", status=503)
 
     if os.path.exists(aud_path):
         resp = send_from_directory(audio_dir, f"scene_{scene_num:02d}.mp3")
