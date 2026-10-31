@@ -98,7 +98,7 @@ KIRI_VOICE_ACTORS = [
     {"id": "Sota", "name": "Sota", "gender": "female", "tag": "ស្រី - ស្រទន់ (Calm)"}
 ]
 
-HTML_TEMPLATE = """
+HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="km">
 <head>
