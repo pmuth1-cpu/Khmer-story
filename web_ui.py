@@ -750,14 +750,20 @@ Example Format 3 (Line-by-Line):
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ script_text: text })
         });
-        const data = await res.json();
-        if (data.status === 'ok') {
+        let data = null;
+        try {
+          data = await res.json();
+        } catch (jErr) {
+          data = { error: `Server returned HTTP ${res.status}` };
+        }
+        if (res.ok && data && data.status === 'ok') {
           showToast(`🎉 បាន Import និងកែប្រែ ${data.updated_count} ប្លង់ជោគជ័យ!`);
           closeImportScriptModal();
           document.getElementById('importScriptTextarea').value = '';
           loadActiveTopic();
         } else {
-          alert('Import error: ' + (data.error || 'Failed'));
+          const errMsg = (data && data.error) ? data.error : `HTTP ${res.status}: Failed to import script`;
+          alert('Import error: ' + errMsg);
         }
       } catch (err) {
         alert('Network error: ' + err);
@@ -1018,20 +1024,35 @@ def render_placeholder_svg(scene_num: int, topic_id: str) -> str:
 </svg>"""
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return Response(status=204)
+
+
 @app.route("/api/test_edge_chris_audio")
 def get_test_edge_chris_audio():
     p = os.path.join(BASE_DIR, "test_edge_chris.mp3")
+    if not os.path.exists(p):
+        try:
+            generate_edge_tts_speech("Hello! This is Christopher, a deep and emotional science documentary voice.", p, voice="christopher")
+        except Exception:
+            pass
     if os.path.exists(p):
         return send_from_directory(BASE_DIR, "test_edge_chris.mp3")
-    return "Not generated", 404
+    return Response(status=204)
 
 
 @app.route("/api/test_edge_guy_audio")
 def get_test_edge_guy_audio():
     p = os.path.join(BASE_DIR, "test_edge_guy.mp3")
+    if not os.path.exists(p):
+        try:
+            generate_edge_tts_speech("Hey there! This is Guy, a dynamic and expressive storyteller voice.", p, voice="guy")
+        except Exception:
+            pass
     if os.path.exists(p):
         return send_from_directory(BASE_DIR, "test_edge_guy.mp3")
-    return "Not generated", 404
+    return Response(status=204)
 
 
 @app.route("/api/test_mms_eng_audio")
@@ -1039,7 +1060,7 @@ def get_test_mms_eng_audio():
     p = os.path.join(BASE_DIR, "test_mms_eng.mp3")
     if os.path.exists(p):
         return send_from_directory(BASE_DIR, "test_mms_eng.mp3")
-    return "Not generated", 404
+    return Response(status=204)
 
 
 @app.route("/api/test_mms_audio")
@@ -1047,7 +1068,7 @@ def get_test_mms_audio():
     p = os.path.join(BASE_DIR, "test_meta_mms.mp3")
     if os.path.exists(p):
         return send_from_directory(BASE_DIR, "test_meta_mms.mp3")
-    return "Not generated", 404
+    return Response(status=204)
 
 
 @app.route("/api/test_google_audio")
@@ -1055,7 +1076,7 @@ def get_test_google_audio():
     p = os.path.join(OUTPUT_DIR, "test_google_speech.mp3")
     if os.path.exists(p):
         return send_from_directory(OUTPUT_DIR, "test_google_speech.mp3")
-    return "Not generated", 404
+    return Response(status=204)
 
 
 @app.route("/")
@@ -1135,18 +1156,24 @@ def download_script_text(topic_id):
 
 def parse_external_script_text(raw_text: str, total_scenes: int = 100) -> List[Dict]:
     """
-    Intelligently parses external narrative script text in various formats:
-    1. JSON array: [{"scene_num": 1, "khmer_speech": "...", "english_speech": "..."}]
-    2. JSON object: {"scenes": [...]}
-    3. Markdown / Text Scene Blocks:
-        Scene 1:
-        Khmer: ...
-        English: ...
-    4. Numbered lines:
-        1. Khmer text...
-        2. Khmer text...
-    5. Simple paragraphs separated by blank lines.
-    Returns list of dicts with keys: scene_num, khmer_speech, english_speech
+    Universally parses external narrative scripts and prompts in all known formats:
+    1. JSON array: [{"scene_num": 1, "khmer_speech": "...", "english_speech": "...", "full_prompt": "..."}]
+    2. JSON object: {"scenes": [...]} or {"1": "...", "2": "..."}
+    3. Exported Google Flow prompt file format:
+       ### [Scene 01] Act 1...
+       Speech (Khmer): ...
+       Speech (English): ...
+       Google Flow Prompt:
+       ...
+    4. Text / Markdown Scene Blocks:
+       Scene 1:
+       Khmer: ...
+       English: ...
+       Prompt: ...
+    5. Numbered lines:
+       1. Khmer speech | English speech
+    6. Paragraphs fallback.
+    Returns list of dicts with: scene_num (int), khmer_speech (str), english_speech (str), full_prompt (str)
     """
     raw_text = raw_text.strip()
     if not raw_text:
@@ -1156,52 +1183,102 @@ def parse_external_script_text(raw_text: str, total_scenes: int = 100) -> List[D
     if (raw_text.startswith("[") and raw_text.endswith("]")) or (raw_text.startswith("{") and raw_text.endswith("}")):
         try:
             parsed = json.loads(raw_text)
-            if isinstance(parsed, dict) and "scenes" in parsed:
-                parsed = parsed["scenes"]
+            if isinstance(parsed, dict):
+                if "scenes" in parsed and isinstance(parsed["scenes"], list):
+                    parsed = parsed["scenes"]
+                elif all(str(k).isdigit() for k in parsed.keys()):
+                    new_list = []
+                    for k in sorted(parsed.keys(), key=lambda x: int(x)):
+                        val = parsed[k]
+                        if isinstance(val, dict):
+                            val["scene_num"] = int(k)
+                            new_list.append(val)
+                        else:
+                            new_list.append({"scene_num": int(k), "khmer_speech": str(val)})
+                    parsed = new_list
+
             if isinstance(parsed, list):
                 results = []
                 for idx, item in enumerate(parsed):
                     if isinstance(item, dict):
-                        s_num = item.get("scene_num") or (idx + 1)
-                        km = item.get("khmer_speech") or item.get("speech") or item.get("khmer") or item.get("text") or ""
+                        try:
+                            s_num = int(item.get("scene_num") or item.get("scene") or (idx + 1))
+                        except Exception:
+                            s_num = idx + 1
+                        km = item.get("khmer_speech") or item.get("speech") or item.get("khmer") or item.get("km") or ""
                         en = item.get("english_speech") or item.get("english") or item.get("en") or ""
+                        prompt = item.get("full_prompt") or item.get("prompt") or item.get("image_prompt") or ""
+
+                        if not km and not en and item.get("text"):
+                            t = str(item.get("text")).strip()
+                            if re.search(r'[\u1780-\u17ff]', t):
+                                km = t
+                            else:
+                                en = t
+
                         results.append({
-                            "scene_num": int(s_num),
+                            "scene_num": s_num,
                             "khmer_speech": str(km).strip(),
-                            "english_speech": str(en).strip()
+                            "english_speech": str(en).strip(),
+                            "full_prompt": str(prompt).strip()
                         })
                     elif isinstance(item, str):
+                        s = item.strip()
+                        km = s if re.search(r'[\u1780-\u17ff]', s) else ""
+                        en = s if not km else ""
                         results.append({
                             "scene_num": idx + 1,
-                            "khmer_speech": item.strip(),
-                            "english_speech": ""
+                            "khmer_speech": km,
+                            "english_speech": en,
+                            "full_prompt": ""
                         })
                 if results:
                     return results
         except Exception:
             pass
 
-    # 2. Check for Scene blocks (e.g., "Scene 1:", "ប្លង់ ១:", "Scene 01", etc.)
-    scene_block_pattern = re.compile(r'(?:^|\n)(?:Scene|ប្លង់|Slide|Frame|Section)\s*0*(\d{1,3})[:.\-\s]*', re.IGNORECASE)
+    # 2. Check for Scene blocks
+    # Supports: "### [Scene 01]", "[Scene 1]", "Scene 1:", "ប្លង់ទី 01:", "Slide 1:", "Frame 1:"
+    scene_block_pattern = re.compile(
+        r'(?:^|\n)\s*(?:#+\s*)?(?:\[\s*)?(?:Scene|ប្លង់|Slide|Frame|Section|ប្លង់ទី)\s*0*(\d{1,3})\s*(?:\]|\:|\.|\-|\))\s*',
+        re.IGNORECASE
+    )
     splits = list(scene_block_pattern.finditer(raw_text))
 
-    if len(splits) >= 2:
+    if len(splits) >= 1:
         results = []
         for i, match in enumerate(splits):
-            s_num = int(match.group(1))
+            try:
+                s_num = int(match.group(1))
+            except Exception:
+                s_num = i + 1
+
             start_pos = match.end()
             end_pos = splits[i + 1].start() if i + 1 < len(splits) else len(raw_text)
             block_content = raw_text[start_pos:end_pos].strip()
 
-            # Look for Khmer: and English: lines inside block
-            km_match = re.search(r'(?:(?:Khmer|🇰🇭|km|ខ្មែរ)\s*[:：]\s*)(.+?)(?=(?:(?:English|🇺🇸|en)\s*[:：])|$)', block_content, re.DOTALL | re.IGNORECASE)
-            en_match = re.search(r'(?:(?:English|🇺🇸|en)\s*[:：]\s*)(.+?)(?=(?:(?:Khmer|🇰🇭|km|ខ្មែរ)\s*[:：])|$)', block_content, re.DOTALL | re.IGNORECASE)
+            # Clean trailing separator lines like "-----------------------"
+            block_content = re.sub(r'[\r\n]+[-=_]{3,}[\r\n]*$', '', block_content).strip()
 
-            if km_match or en_match:
-                km = km_match.group(1).strip() if km_match else ""
-                en = en_match.group(1).strip() if en_match else ""
-            else:
-                # If no labels, check lines: Khmer vs English by unicode
+            km_match = re.search(
+                r'(?:(?:Speech\s*\([Kk]hmer\)|Khmer\s*Speech|Khmer|🇰🇭|km|ខ្មែរ)\s*[:：]\s*)(.+?)(?=(?:(?:Speech\s*\([Ee]nglish\)|English\s*Speech|English|🇺🇸|en|Google\s*Flow\s*Prompt|Full\s*Prompt|Image\s*Prompt|Prompt|Visual)\s*[:：])|$)',
+                block_content, re.DOTALL | re.IGNORECASE
+            )
+            en_match = re.search(
+                r'(?:(?:Speech\s*\([Ee]nglish\)|English\s*Speech|English|🇺🇸|en)\s*[:：]\s*)(.+?)(?=(?:(?:Speech\s*\([Kk]hmer\)|Khmer\s*Speech|Khmer|🇰🇭|km|ខ្មែរ|Google\s*Flow\s*Prompt|Full\s*Prompt|Image\s*Prompt|Prompt|Visual)\s*[:：])|$)',
+                block_content, re.DOTALL | re.IGNORECASE
+            )
+            prompt_match = re.search(
+                r'(?:(?:Google\s*Flow\s*Prompt|Full\s*Prompt|Image\s*Prompt|Prompt|Visual)\s*[:：]\s*)(.+?)(?=(?:(?:Speech\s*\([Kk]hmer\)|Speech\s*\([Ee]nglish\)|Khmer|English)\s*[:：])|$)',
+                block_content, re.DOTALL | re.IGNORECASE
+            )
+
+            km = km_match.group(1).strip() if km_match else ""
+            en = en_match.group(1).strip() if en_match else ""
+            prompt = prompt_match.group(1).strip() if prompt_match else ""
+
+            # If no explicit labels found, classify content lines
+            if not km and not en and not prompt:
                 sub_lines = [l.strip() for l in block_content.splitlines() if l.strip()]
                 km_parts = []
                 en_parts = []
@@ -1218,8 +1295,10 @@ def parse_external_script_text(raw_text: str, total_scenes: int = 100) -> List[D
             results.append({
                 "scene_num": s_num,
                 "khmer_speech": km,
-                "english_speech": en
+                "english_speech": en,
+                "full_prompt": prompt
             })
+
         if results:
             return results
 
@@ -1237,19 +1316,22 @@ def parse_external_script_text(raw_text: str, total_scenes: int = 100) -> List[D
                 numbered_results.append({
                     "scene_num": s_num,
                     "khmer_speech": parts[0].strip(),
-                    "english_speech": parts[1].strip()
+                    "english_speech": parts[1].strip(),
+                    "full_prompt": ""
                 })
             elif re.search(r'[\u1780-\u17ff]', text_body):
                 numbered_results.append({
                     "scene_num": s_num,
                     "khmer_speech": text_body,
-                    "english_speech": ""
+                    "english_speech": "",
+                    "full_prompt": ""
                 })
             else:
                 numbered_results.append({
                     "scene_num": s_num,
                     "khmer_speech": "",
-                    "english_speech": text_body
+                    "english_speech": text_body,
+                    "full_prompt": ""
                 })
 
     if len(numbered_results) >= 2:
@@ -1263,135 +1345,172 @@ def parse_external_script_text(raw_text: str, total_scenes: int = 100) -> List[D
             fallback_results.append({
                 "scene_num": idx,
                 "khmer_speech": p,
-                "english_speech": ""
+                "english_speech": "",
+                "full_prompt": ""
             })
         else:
             fallback_results.append({
                 "scene_num": idx,
                 "khmer_speech": "",
-                "english_speech": p
+                "english_speech": p,
+                "full_prompt": ""
             })
     return fallback_results
 
 
 @app.route("/api/project/<topic_id>/update_scene_script", methods=["POST"])
 def update_scene_script(topic_id):
-    """Updates a single scene's Khmer and/or English narration."""
-    data = request.json or {}
-    scene_num = int(data.get("scene_num", 1))
-    khmer_speech = data.get("khmer_speech", "").strip()
-    english_speech = data.get("english_speech", "").strip()
+    """Updates a single scene's Khmer, English narration, and/or prompt."""
+    try:
+        data = request.json or {}
+        scene_num = int(data.get("scene_num", 1))
+        khmer_speech = data.get("khmer_speech", "").strip()
+        english_speech = data.get("english_speech", "").strip()
+        full_prompt = data.get("full_prompt", "").strip()
 
-    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-    if os.path.exists(custom_path):
-        with open(custom_path, "r", encoding="utf-8") as f:
-            script_data = json.load(f)
-    else:
-        script_data = get_or_create_project_script(topic_id)
+        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+        if os.path.exists(custom_path):
+            with open(custom_path, "r", encoding="utf-8") as f:
+                script_data = json.load(f)
+        else:
+            script_data = get_or_create_project_script(topic_id)
 
-    matched = False
-    for s in script_data.get("scenes", []):
-        if s.get("scene_num") == scene_num:
-            if khmer_speech:
-                s["khmer_speech"] = khmer_speech
-            if english_speech:
-                s["english_speech"] = english_speech
-            matched = True
-            break
+        matched = False
+        for s in script_data.get("scenes", []):
+            if int(s.get("scene_num", 0)) == scene_num:
+                if khmer_speech:
+                    s["khmer_speech"] = khmer_speech
+                if english_speech:
+                    s["english_speech"] = english_speech
+                if full_prompt:
+                    s["full_prompt"] = full_prompt
+                matched = True
+                break
 
-    if not matched:
-        return jsonify({"status": "error", "error": f"Scene {scene_num} not found"}), 404
+        if not matched:
+            return jsonify({"status": "error", "error": f"Scene {scene_num} not found"}), 404
 
-    # Save to custom script file
-    with open(custom_path, "w", encoding="utf-8") as f:
-        json.dump(script_data, f, ensure_ascii=False, indent=2)
+        # Save to custom script file
+        os.makedirs(CUSTOM_SCRIPTS_DIR, exist_ok=True)
+        with open(custom_path, "w", encoding="utf-8") as f:
+            json.dump(script_data, f, ensure_ascii=False, indent=2)
 
-    # Invalidate audio and clip cache for this scene
-    out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
-    audio_dir = os.path.join(out_dir, "audio")
-    clips_dir = os.path.join(out_dir, "clips")
-    for fname in [f"scene_{scene_num:02d}.mp3", f"scene_{scene_num:02d}.meta.json"]:
-        p = os.path.join(audio_dir, fname)
-        if os.path.exists(p):
+        # Invalidate audio and clip cache for this scene
+        out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
+        audio_dir = os.path.join(out_dir, "audio")
+        clips_dir = os.path.join(out_dir, "clips")
+        for fname in [f"scene_{scene_num:02d}.mp3", f"scene_{scene_num:02d}.meta.json"]:
+            p = os.path.join(audio_dir, fname)
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        p_clip = os.path.join(clips_dir, f"clip_{scene_num:02d}.mp4")
+        if os.path.exists(p_clip):
             try:
-                os.remove(p)
+                os.remove(p_clip)
             except Exception:
                 pass
-    p_clip = os.path.join(clips_dir, f"clip_{scene_num:02d}.mp4")
-    if os.path.exists(p_clip):
+
+        # Re-export prompts file safely
         try:
-            os.remove(p_clip)
-        except Exception:
-            pass
+            prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
+            export_google_flow_prompts(script_data, prompts_file)
+        except Exception as e_p:
+            print(f"Notice: prompts export skipped ({e_p})")
 
-    # Re-export prompts file
-    prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
-    export_google_flow_prompts(script_data, prompts_file)
-
-    return jsonify({"status": "ok", "scene_num": scene_num})
+        return jsonify({"status": "ok", "scene_num": scene_num})
+    except Exception as e:
+        import traceback
+        print("Error in update_scene_script:\n", traceback.format_exc())
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 
 @app.route("/api/project/<topic_id>/import_script", methods=["POST"])
 def import_project_script(topic_id):
-    """Batch imports narrative script from external text (JSON, blocks, or lines)."""
-    data = request.json or {}
-    raw_text = data.get("script_text", "")
-    if not raw_text:
-        return jsonify({"status": "error", "error": "No script text provided"}), 400
+    """Batch imports narrative script and prompts from external text (JSON, blocks, or lines)."""
+    try:
+        data = request.json or {}
+        raw_text = data.get("script_text", "")
+        if not raw_text:
+            return jsonify({"status": "error", "error": "No script text provided"}), 400
 
-    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-    if os.path.exists(custom_path):
-        with open(custom_path, "r", encoding="utf-8") as f:
-            script_data = json.load(f)
-    else:
-        script_data = get_or_create_project_script(topic_id)
+        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+        if os.path.exists(custom_path):
+            with open(custom_path, "r", encoding="utf-8") as f:
+                script_data = json.load(f)
+        else:
+            script_data = get_or_create_project_script(topic_id)
 
-    total_scenes = len(script_data.get("scenes", []))
-    items = parse_external_script_text(raw_text, total_scenes=total_scenes)
-    if not items:
-        return jsonify({"status": "error", "error": "Could not parse any scenes from text"}), 400
+        total_scenes = len(script_data.get("scenes", []))
+        items = parse_external_script_text(raw_text, total_scenes=total_scenes)
+        if not items:
+            return jsonify({"status": "error", "error": "Could not parse any scenes from provided text"}), 400
 
-    out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
-    audio_dir = os.path.join(out_dir, "audio")
-    clips_dir = os.path.join(out_dir, "clips")
+        out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
+        audio_dir = os.path.join(out_dir, "audio")
+        clips_dir = os.path.join(out_dir, "clips")
+        os.makedirs(audio_dir, exist_ok=True)
+        os.makedirs(clips_dir, exist_ok=True)
 
-    scenes_by_num = {s.get("scene_num"): s for s in script_data.get("scenes", [])}
-    updated_scenes = []
+        scenes_by_num = {int(s.get("scene_num")): s for s in script_data.get("scenes", []) if s.get("scene_num") is not None}
+        updated_scenes = []
 
-    for item in items:
-        s_num = item["scene_num"]
-        target = scenes_by_num.get(s_num)
-        if target:
-            if item.get("khmer_speech"):
-                target["khmer_speech"] = item["khmer_speech"]
-            if item.get("english_speech"):
-                target["english_speech"] = item["english_speech"]
-            updated_scenes.append(s_num)
+        for item in items:
+            try:
+                s_num = int(item["scene_num"])
+            except Exception:
+                continue
 
-            # Invalidate cached audio & clip
-            for fname in [f"scene_{s_num:02d}.mp3", f"scene_{s_num:02d}.meta.json"]:
-                p = os.path.join(audio_dir, fname)
-                if os.path.exists(p):
-                    try:
-                        os.remove(p)
-                    except Exception:
-                        pass
-            p_clip = os.path.join(clips_dir, f"clip_{s_num:02d}.mp4")
-            if os.path.exists(p_clip):
-                try:
-                    os.remove(p_clip)
-                except Exception:
-                    pass
+            target = scenes_by_num.get(s_num)
+            if target:
+                changed = False
+                if item.get("khmer_speech"):
+                    target["khmer_speech"] = item["khmer_speech"]
+                    changed = True
+                if item.get("english_speech"):
+                    target["english_speech"] = item["english_speech"]
+                    changed = True
+                if item.get("full_prompt"):
+                    target["full_prompt"] = item["full_prompt"]
+                    changed = True
 
-    # Save custom script
-    with open(custom_path, "w", encoding="utf-8") as f:
-        json.dump(script_data, f, ensure_ascii=False, indent=2)
+                if changed:
+                    updated_scenes.append(s_num)
 
-    # Re-export google flow prompts
-    prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
-    export_google_flow_prompts(script_data, prompts_file)
+                    # Invalidate cached audio & clip
+                    for fname in [f"scene_{s_num:02d}.mp3", f"scene_{s_num:02d}.meta.json"]:
+                        p = os.path.join(audio_dir, fname)
+                        if os.path.exists(p):
+                            try:
+                                os.remove(p)
+                            except Exception:
+                                pass
+                    p_clip = os.path.join(clips_dir, f"clip_{s_num:02d}.mp4")
+                    if os.path.exists(p_clip):
+                        try:
+                            os.remove(p_clip)
+                        except Exception:
+                            pass
 
-    return jsonify({"status": "ok", "updated_count": len(updated_scenes), "scenes": updated_scenes})
+        # Save custom script
+        os.makedirs(CUSTOM_SCRIPTS_DIR, exist_ok=True)
+        with open(custom_path, "w", encoding="utf-8") as f:
+            json.dump(script_data, f, ensure_ascii=False, indent=2)
+
+        # Re-export google flow prompts safely
+        try:
+            prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
+            export_google_flow_prompts(script_data, prompts_file)
+        except Exception as e_prompts:
+            print(f"Notice: prompts export skipped ({e_prompts})")
+
+        return jsonify({"status": "ok", "updated_count": len(updated_scenes), "scenes": updated_scenes})
+    except Exception as e:
+        import traceback
+        print("Error in import_project_script:\n", traceback.format_exc())
+        return jsonify({"status": "error", "error": f"{type(e).__name__}: {str(e)}"}), 500
 
 
 @app.route("/api/create_topic", methods=["POST"])
