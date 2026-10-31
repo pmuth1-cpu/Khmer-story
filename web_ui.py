@@ -438,27 +438,22 @@ HTML_TEMPLATE = """
       </div>
 
       <div class="space-y-2">
-        <label class="text-[11px] text-slate-300 font-medium block">
-          Paste Script Text (Supports JSON array, "Scene 1: ...", or line-by-line text):
-        </label>
-        <textarea id="importScriptTextarea" rows="12" placeholder='Example Format 1 (JSON):
-[
-  { "scene_num": 1, "khmer_speech": "អត្ថបទប្លង់ទី ១...", "english_speech": "Scene 1..." },
-  { "scene_num": 2, "khmer_speech": "អត្ថបទប្លង់ទី ២...", "english_speech": "Scene 2..." }
-]
+        <div class="flex items-center justify-between">
+          <label class="text-[11px] text-slate-300 font-medium block">
+            Paste Script Text or Select File:
+          </label>
+          <label class="cursor-pointer text-[11px] text-sky-400 hover:text-sky-300 transition font-medium px-2.5 py-1 bg-sky-500/10 rounded-lg border border-sky-500/20 flex items-center gap-1 shadow-sm">
+            <span>📁 Choose File (.txt / .json)</span>
+            <input type="file" accept=".txt,.json" class="hidden" onchange="loadScriptFile(this.files[0])">
+          </label>
+        </div>
+        <textarea id="importScriptTextarea" rows="12" placeholder='Paste your script here, or click "Choose File" above to upload a file directly.
 
-Example Format 2 (Text Blocks):
-Scene 1:
-Khmer: អត្ថបទប្លង់ទី ១...
-English: Scene 1 narration...
-
-Scene 2:
-Khmer: អត្ថបទប្លង់ទី ២...
-English: Scene 2 narration...
-
-Example Format 3 (Line-by-Line):
-1. អត្ថបទប្លង់ទី ១
-2. អត្ថបទប្លង់ទី ២' class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+Supports:
+1. Exported Prompts File (### [Scene 01] ... Speech (Khmer): ... Speech (English): ... Google Flow Prompt: ...)
+2. Scene Blocks (Scene 1: \n Khmer: ... \n English: ...)
+3. Numbered Lines (1. Text ... \n 2. Text ...)
+4. JSON Array ([{"scene_num": 1, "khmer_speech": "...", "english_speech": "..."}])' class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
       </div>
 
       <div class="flex items-center justify-between pt-2 border-t border-slate-800">
@@ -731,6 +726,16 @@ Example Format 3 (Line-by-Line):
 
     function closeImportScriptModal() {
       document.getElementById('importScriptModal').classList.add('hidden');
+    }
+
+    function loadScriptFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('importScriptTextarea').value = e.target.result;
+        showToast('បានអាន File Script រួចរាល់! ចុច Import & Apply');
+      };
+      reader.readAsText(file);
     }
 
     async function submitImportScript() {
