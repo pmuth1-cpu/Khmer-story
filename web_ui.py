@@ -40,13 +40,38 @@ app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1 GB upload support for
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IS_VERCEL = bool(os.environ.get("VERCEL"))
 OUTPUT_DIR = "/tmp/output" if IS_VERCEL else os.path.join(BASE_DIR, "output")
-CUSTOM_SCRIPTS_DIR = os.path.join(BASE_DIR, "custom_scripts")
+SEED_SCRIPTS_DIR = os.path.join(BASE_DIR, "custom_scripts")
+CUSTOM_SCRIPTS_DIR = "/tmp/custom_scripts" if IS_VERCEL else os.path.join(BASE_DIR, "custom_scripts")
 
 try:
     os.makedirs(CUSTOM_SCRIPTS_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 except Exception:
     pass
+
+
+def load_custom_script_data(topic_id: str) -> Optional[Dict]:
+    """Loads script data supporting both local development and Vercel serverless /tmp storage."""
+    # 1. Check custom scripts directory (/tmp/custom_scripts on Vercel or local custom_scripts)
+    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
+    if os.path.exists(custom_path):
+        try:
+            with open(custom_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    # 2. On Vercel, check bundled seed directory in repo if not yet modified in /tmp
+    if IS_VERCEL:
+        seed_path = os.path.join(SEED_SCRIPTS_DIR, f"{topic_id}.json")
+        if os.path.exists(seed_path):
+            try:
+                with open(seed_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+
+    return None
 
 # Global in-memory render progress tracker
 RENDER_STATUS = {}
@@ -546,12 +571,27 @@ Supports:
       renderScenes(currentScript.scenes);
     }
 
-    function updateVideoPlayer() {
+    async function updateVideoPlayer() {
       const player = document.getElementById('player');
       const vSrc = '/api/project/' + activeTopicId + '/video?t=' + Date.now();
-      player.src = vSrc;
-      document.getElementById('downloadVideoBtn').href = vSrc;
-      document.getElementById('downloadSrtBtn').href = '/api/project/' + activeTopicId + '/subtitles';
+      const dlBtn = document.getElementById('downloadVideoBtn');
+      const srtBtn = document.getElementById('downloadSrtBtn');
+      if (dlBtn) dlBtn.href = vSrc;
+      if (srtBtn) srtBtn.href = '/api/project/' + activeTopicId + '/subtitles';
+
+      try {
+        const res = await fetch('/api/project/' + activeTopicId + '/video_status');
+        const data = await res.json().catch(() => null);
+        if (data && data.ready) {
+          player.src = vSrc;
+          if (dlBtn) dlBtn.classList.remove('opacity-50', 'pointer-events-none');
+        } else {
+          player.removeAttribute('src');
+          if (dlBtn) dlBtn.classList.add('opacity-50', 'pointer-events-none');
+        }
+      } catch (e) {
+        player.removeAttribute('src');
+      }
     }
 
     async function updateThumbnail() {
@@ -855,40 +895,154 @@ Supports:
       }
     }
 
+    async function optimizeImageForUpload(file) {
+      // If already <= 2.5MB and image, safe for Vercel without compression
+      if (file.size <= 2.5 * 1024 * 1024) {
+        return file;
+      }
+      return new Promise((resolve) => {
+        try {
+          const img = new Image();
+          const url = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            let width = img.naturalWidth || img.width;
+            let height = img.naturalHeight || img.height;
+            const maxDim = 1920;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(
+              (blob) => {
+                if (blob && blob.size < file.size) {
+                  const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                  const optimizedFile = new File([blob], newName, { type: 'image/jpeg' });
+                  resolve(optimizedFile);
+                } else {
+                  resolve(file);
+                }
+              },
+              'image/jpeg',
+              0.88
+            );
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve(file);
+          };
+          img.src = url;
+        } catch (e) {
+          resolve(file);
+        }
+      });
+    }
+
     async function batchUploadImages(files) {
       if (!files || files.length === 0) return;
-      const totalFiles = files.length;
-      showToast(`កំពុងចាប់ផ្តើមបញ្ចូលរូបភាព ${totalFiles} សន្លឹក...`);
+      const fileList = Array.from(files);
+      const totalFiles = fileList.length;
+      const totalScenes = (currentScript && currentScript.scenes) ? currentScript.scenes.length : 100;
 
-      // Upload in chunks of 10 images to prevent huge payload timeouts / memory spikes
-      const CHUNK_SIZE = 10;
-      let totalSaved = 0;
+      showToast(`កំពុងរៀបចំ Upload រូបភាព ${totalFiles} សន្លឹក...`);
 
-      for (let i = 0; i < totalFiles; i += CHUNK_SIZE) {
-        const chunk = Array.from(files).slice(i, i + CHUNK_SIZE);
-        const chunkEnd = Math.min(i + CHUNK_SIZE, totalFiles);
-        showToast(`កំពុង Upload រូបភាព ${i + 1}-${chunkEnd} នៃ ${totalFiles}...`);
+      // 1. Natural sort files by filename (e.g. 1.png, 2.png, ..., 10.png)
+      fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
-        const formData = new FormData();
-        chunk.forEach(f => formData.append('images', f));
-        formData.append('topic_id', activeTopicId);
+      // 2. Map files to scene numbers
+      function parseSceneNum(name) {
+        const stem = name.substring(0, name.lastIndexOf('.')) || name;
+        let m = stem.match(/(?:scene|blang|prompt|slide|frame|p|img|image)[_\s-]*0*(\d{1,3})\b/i);
+        if (m) {
+          const v = parseInt(m[1], 10);
+          if (v >= 1 && v <= totalScenes) return v;
+        }
+        m = stem.match(/^0*(\d{1,3})(?:[_\s.-]|$)/);
+        if (m) {
+          const v = parseInt(m[1], 10);
+          if (v >= 1 && v <= totalScenes) return v;
+        }
+        m = stem.match(/(?:[_\s.-]|\()0*(\d{1,3})\)?$/);
+        if (m) {
+          const v = parseInt(m[1], 10);
+          if (v >= 1 && v <= totalScenes) return v;
+        }
+        return null;
+      }
 
-        try {
-          const res = await fetch('/api/batch_upload_images', { method: 'POST', body: formData });
-          if (res.ok) {
-            const data = await res.json().catch(() => null);
-            if (data && data.status === 'ok') {
-              totalSaved += (data.saved_count || chunk.length);
-            }
-          } else {
-            console.warn(`Chunk ${i} upload HTTP ${res.status}`);
-          }
-        } catch (chunkErr) {
-          console.error(`Chunk error:`, chunkErr);
+      const assigned = [];
+      const unassigned = [];
+      const usedSlots = new Set();
+
+      for (const f of fileList) {
+        const sNum = parseSceneNum(f.name);
+        if (sNum && !usedSlots.has(sNum)) {
+          assigned.push({ file: f, scene: sNum });
+          usedSlots.add(sNum);
+        } else {
+          unassigned.push(f);
         }
       }
 
-      showToast(`🎉 បានបញ្ចូលរូបភាពទាំងអស់ ${totalSaved} សន្លឹកជោគជ័យ!`);
+      // Assign remaining unassigned files to open slots (1..totalScenes)
+      let nextSlot = 1;
+      for (const f of unassigned) {
+        while (usedSlots.has(nextSlot) && nextSlot <= totalScenes) {
+          nextSlot++;
+        }
+        const target = (nextSlot <= totalScenes) ? nextSlot : nextSlot;
+        assigned.push({ file: f, scene: target });
+        usedSlots.add(target);
+        nextSlot++;
+      }
+
+      // Sort upload plan by target scene number
+      assigned.sort((a, b) => a.scene - b.scene);
+
+      // 3. Upload 1-by-1 sequentially with image optimization to prevent Vercel 413
+      let successCount = 0;
+      for (let i = 0; i < assigned.length; i++) {
+        const item = assigned[i];
+        showToast(`កំពុង Upload រូបភាព ${i + 1}/${assigned.length} (ប្លង់ ${item.scene})...`);
+
+        try {
+          const optFile = await optimizeImageForUpload(item.file);
+          const formData = new FormData();
+          formData.append('image', optFile);
+          formData.append('topic_id', activeTopicId);
+          formData.append('scene', item.scene);
+
+          const res = await fetch('/api/upload_scene_image', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (res.ok) {
+            successCount++;
+            // Live update thumbnail in DOM if present
+            const img = document.getElementById(`scene_img_${item.scene}`);
+            if (img) {
+              img.src = `/api/project/${activeTopicId}/image/${item.scene}?t=${Date.now()}`;
+            }
+          } else {
+            console.warn(`Upload scene ${item.scene} HTTP ${res.status}`);
+          }
+        } catch (uploadErr) {
+          console.error(`Upload scene ${item.scene} error:`, uploadErr);
+        }
+      }
+
+      showToast(`🎉 បានបញ្ចូលរូបភាពទាំងអស់ ${successCount}/${assigned.length} សន្លឹកជោគជ័យ!`);
       if (currentScript && currentScript.scenes) {
         renderScenes(currentScript.scenes);
       } else {
@@ -898,20 +1052,24 @@ Supports:
 
     async function uploadSingleImage(sceneNum, file) {
       if (!file) return;
-      const formData = new FormData();
-      formData.append('image', file);
-      formData.append('topic_id', activeTopicId);
-      formData.append('scene', sceneNum);
-
+      showToast(`កំពុង Upload រូបភាពប្លង់ ${sceneNum}...`);
       try {
+        const optFile = await optimizeImageForUpload(file);
+        const formData = new FormData();
+        formData.append('image', optFile);
+        formData.append('topic_id', activeTopicId);
+        formData.append('scene', sceneNum);
+
         const res = await fetch('/api/upload_scene_image', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (data.status === 'ok') {
+        const data = await res.json().catch(() => null);
+        if (res.ok && data && data.status === 'ok') {
           showToast(`បានបញ្ចូលរូបភាពប្លង់ ${sceneNum}!`);
           const img = document.getElementById(`scene_img_${sceneNum}`);
           if (img) {
             img.src = `/api/project/${activeTopicId}/image/${sceneNum}?t=${Date.now()}`;
           }
+        } else {
+          alert('Upload failed: HTTP ' + res.status);
         }
       } catch (err) {
         alert('Error: ' + err);
@@ -1111,12 +1269,9 @@ def index():
 
 @app.route("/api/project/<topic_id>")
 def get_project_script(topic_id):
-    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-    if os.path.exists(custom_path):
-        with open(custom_path, "r", encoding="utf-8") as f:
-            return jsonify(json.load(f))
-
-    script = get_or_create_project_script(topic_id)
+    script = load_custom_script_data(topic_id)
+    if not script:
+        script = get_or_create_project_script(topic_id)
     return jsonify(script)
 
 
@@ -1124,15 +1279,15 @@ def get_project_script(topic_id):
 def download_prompts_file(topic_id):
     out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
     prompts_file = os.path.join(out_dir, "google_flow_prompts.txt")
-    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-    if os.path.exists(custom_path):
-        with open(custom_path, "r", encoding="utf-8") as f:
-            script = json.load(f)
-    else:
+    script = load_custom_script_data(topic_id)
+    if not script:
         script = get_or_create_project_script(topic_id)
 
     os.makedirs(out_dir, exist_ok=True)
-    export_google_flow_prompts(script, prompts_file)
+    try:
+        export_google_flow_prompts(script, prompts_file)
+    except Exception as e:
+        print(f"Notice: prompts export skipped: {e}")
     resp = send_from_directory(out_dir, "google_flow_prompts.txt", as_attachment=True)
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
@@ -1143,11 +1298,8 @@ def download_prompts_file(topic_id):
 @app.route("/api/project/<topic_id>/script_text")
 def download_script_text(topic_id):
     """Exports clean human-readable narrative text file for external use/reading."""
-    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-    if os.path.exists(custom_path):
-        with open(custom_path, "r", encoding="utf-8") as f:
-            script = json.load(f)
-    else:
+    script = load_custom_script_data(topic_id)
+    if not script:
         script = get_or_create_project_script(topic_id)
 
     lines = []
@@ -1389,11 +1541,8 @@ def update_scene_script(topic_id):
         english_speech = data.get("english_speech", "").strip()
         full_prompt = data.get("full_prompt", "").strip()
 
-        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-        if os.path.exists(custom_path):
-            with open(custom_path, "r", encoding="utf-8") as f:
-                script_data = json.load(f)
-        else:
+        script_data = load_custom_script_data(topic_id)
+        if not script_data:
             script_data = get_or_create_project_script(topic_id)
 
         matched = False
@@ -1413,6 +1562,7 @@ def update_scene_script(topic_id):
 
         # Save to custom script file
         os.makedirs(CUSTOM_SCRIPTS_DIR, exist_ok=True)
+        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
         with open(custom_path, "w", encoding="utf-8") as f:
             json.dump(script_data, f, ensure_ascii=False, indent=2)
 
@@ -1457,11 +1607,8 @@ def import_project_script(topic_id):
         if not raw_text:
             return jsonify({"status": "error", "error": "No script text provided"}), 400
 
-        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-        if os.path.exists(custom_path):
-            with open(custom_path, "r", encoding="utf-8") as f:
-                script_data = json.load(f)
-        else:
+        script_data = load_custom_script_data(topic_id)
+        if not script_data:
             script_data = get_or_create_project_script(topic_id)
 
         total_scenes = len(script_data.get("scenes", []))
@@ -1517,6 +1664,7 @@ def import_project_script(topic_id):
 
         # Save custom script
         os.makedirs(CUSTOM_SCRIPTS_DIR, exist_ok=True)
+        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
         with open(custom_path, "w", encoding="utf-8") as f:
             json.dump(script_data, f, ensure_ascii=False, indent=2)
 
@@ -1587,11 +1735,8 @@ def batch_upload():
     os.makedirs(clips_dir, exist_ok=True)
 
     # 1. Get total scenes for this topic
-    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-    if os.path.exists(custom_path):
-        with open(custom_path, "r", encoding="utf-8") as f:
-            script_data = json.load(f)
-    else:
+    script_data = load_custom_script_data(topic_id)
+    if not script_data:
         script_data = get_or_create_project_script(topic_id)
     total_scenes = len(script_data.get("scenes", [])) or 100
 
@@ -1643,9 +1788,18 @@ def batch_upload():
 
     unassigned.sort(key=lambda f: natural_keys(f.filename))
 
-    # Find open scene slots
+    # Find open scene slots, checking disk so sequential 1-by-1 uploads fill open slots
+    occupied_on_disk = set()
+    if os.path.exists(dest_dir):
+        for exist_file in os.listdir(dest_dir):
+            m = re.search(r'scene_0*(\d{1,3})', exist_file.lower())
+            if m:
+                occupied_on_disk.add(int(m.group(1)))
+
     all_slots = list(range(1, total_scenes + 1))
-    empty_slots = [s for s in all_slots if s not in assigned]
+    empty_slots = [s for s in all_slots if s not in assigned and s not in occupied_on_disk]
+    if not empty_slots:
+        empty_slots = [s for s in all_slots if s not in assigned]
 
     # Fill empty slots with unassigned files
     for f in unassigned:
@@ -1757,11 +1911,8 @@ def get_scene_audio(topic_id, scene_num):
     aud_path = os.path.join(audio_dir, f"scene_{scene_num:02d}.mp3")
     meta_path = os.path.join(audio_dir, f"scene_{scene_num:02d}.meta.json")
 
-    custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-    if os.path.exists(custom_path):
-        with open(custom_path, "r", encoding="utf-8") as f:
-            script_data = json.load(f)
-    else:
+    script_data = load_custom_script_data(topic_id)
+    if not script_data:
         script_data = get_or_create_project_script(topic_id)
 
     target_scene = None
@@ -1821,6 +1972,14 @@ def get_scene_audio(topic_id, scene_num):
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return resp
     return "Audio not found", 404
+
+
+@app.route("/api/project/<topic_id>/video_status")
+def get_project_video_status(topic_id):
+    """Checks if the final video has been rendered without causing a 404 console error."""
+    p = os.path.join(OUTPUT_DIR, f"{topic_id}_longform", "final_youtube_video.mp4")
+    ready = os.path.exists(p) and os.path.getsize(p) > 1000
+    return jsonify({"status": "ok", "ready": ready, "topic_id": topic_id})
 
 
 @app.route("/api/project/<topic_id>/video")
@@ -1897,11 +2056,8 @@ def get_project_thumbnail_prompts(topic_id):
 def _run_render_worker(topic_id: str, max_scenes: Optional[int] = None, voice_engine: str = "edge_tts_chris"):
     """Background worker that executes the complete longform video pipeline with parallelism."""
     try:
-        custom_path = os.path.join(CUSTOM_SCRIPTS_DIR, f"{topic_id}.json")
-        if os.path.exists(custom_path):
-            with open(custom_path, "r", encoding="utf-8") as f:
-                script_data = json.load(f)
-        else:
+        script_data = load_custom_script_data(topic_id)
+        if not script_data:
             script_data = get_or_create_project_script(topic_id)
 
         out_dir = os.path.join(OUTPUT_DIR, f"{topic_id}_longform")
